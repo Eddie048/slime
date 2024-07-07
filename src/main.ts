@@ -3,23 +3,23 @@ import {
   vAdd,
   vCreate,
   vMultiplyScalar,
+  vNormalize,
   vRotateByAngle,
 } from "./vector";
 
 // Options
 const agentVelocity = 1;
-const senseMultiple = 10;
-const decayFactor = 3;
-const turnAngle = 0.6;
-const numAgents = 10000;
+const senseDistance = 10;
+const senseAngle = 1.2;
+const decayFactor = 20;
+const turnSpeed = 0.7;
+const numAgents = 50000;
+const canvasScale = 2;
 
 // Initialize canvas and rendering context
 const canvas = <HTMLCanvasElement>document.getElementById("canvas");
-// canvas.height = document.body.clientHeight;
-// canvas.width = document.body.clientWidth;
-
-canvas.height = 450;
-canvas.width = 720;
+canvas.height = document.body.clientHeight / canvasScale;
+canvas.width = document.body.clientWidth / canvasScale;
 
 const ctx = <CanvasRenderingContext2D>(
   canvas.getContext("2d", { willReadFrequently: true })
@@ -28,6 +28,8 @@ const ctx = <CanvasRenderingContext2D>(
 // Fill screen with black
 ctx.fillStyle = "black";
 ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+ctx.filter = "blur(100px)";
 
 // Initialize agents
 type Agent = {
@@ -38,9 +40,14 @@ type Agent = {
 const agentList: Agent[] = [];
 
 for (let i = 0; i < numAgents; i++) {
+  const p: Vector = vCreate(Math.random() * 200, Math.random() * 2 * Math.PI);
+  const center: Vector = {
+    x: -canvas.width / 2,
+    y: -canvas.height / 2,
+  };
   agentList.push({
-    position: { x: canvas.width / 2, y: canvas.height / 2 },
-    velocity: vCreate(agentVelocity, Math.random() * Math.PI * 2),
+    position: vAdd(p, center),
+    velocity: vMultiplyScalar(vNormalize(p), -agentVelocity),
   });
 }
 
@@ -60,11 +67,13 @@ const animationLoop = () => {
 
   for (let agent of agentList) {
     // Sense
-    const temp = vMultiplyScalar(agent.velocity, senseMultiple);
+    const temp = vMultiplyScalar(agent.velocity, senseDistance);
 
-    const leftSense = vAdd(vRotateByAngle(temp, -turnAngle), agent.position);
+    const turnStrength = Math.random();
+
+    const leftSense = vAdd(vRotateByAngle(temp, -senseAngle), agent.position);
     const forewardSense = vAdd(temp, agent.position);
-    const rightSense = vAdd(vRotateByAngle(temp, turnAngle), agent.position);
+    const rightSense = vAdd(vRotateByAngle(temp, senseAngle), agent.position);
     const leftVal = getVal(leftSense.x, leftSense.y);
     const forewardVal = getVal(forewardSense.x, forewardSense.y);
     const rightVal = getVal(rightSense.x, rightSense.y);
@@ -74,32 +83,39 @@ const animationLoop = () => {
     } else if (forewardVal > leftVal && forewardVal > rightVal) {
       agent.velocity = vRotateByAngle(
         agent.velocity,
-        Math.random() * 2 * turnAngle - turnAngle
+        (turnStrength - 0.5) * 2 * turnSpeed
       );
     } else if (leftVal < rightVal) {
-      agent.velocity = vRotateByAngle(agent.velocity, -turnAngle);
+      agent.velocity = vRotateByAngle(
+        agent.velocity,
+        -turnSpeed * turnStrength
+      );
     } else {
-      agent.velocity = vRotateByAngle(agent.velocity, turnAngle);
+      agent.velocity = vRotateByAngle(agent.velocity, turnSpeed * turnStrength);
     }
 
     // Move
     agent.position = vAdd(agent.position, agent.velocity);
     // Ensure agent stays in bounds, bounces off walls
     if (agent.position.x < 0) {
-      agent.velocity.x *= -1;
-      agent.position.x = 0;
+      // agent.velocity.x *= -1;
+      // agent.position.x = 0;
+      agent.position.x += canvas.width;
     }
     if (agent.position.x >= canvas.width - 1) {
-      agent.velocity.x *= -1;
-      agent.position.x = canvas.width - 1;
+      // agent.velocity.x *= -1;
+      // agent.position.x = canvas.width - 1;
+      agent.position.x -= canvas.width;
     }
     if (agent.position.y < 0) {
-      agent.velocity.y *= -1;
-      agent.position.y = 0;
+      // agent.velocity.y *= -1;
+      // agent.position.y = 0;
+      agent.position.y += canvas.height;
     }
     if (agent.position.y >= canvas.height) {
-      agent.velocity.y *= -1;
-      agent.position.y = canvas.height - 1;
+      // agent.velocity.y *= -1;
+      // agent.position.y = canvas.height - 1;
+      agent.position.y -= canvas.height;
     }
   }
 
@@ -108,7 +124,7 @@ const animationLoop = () => {
   for (let x = 0; x < canvas.width; x++) {
     for (let y = 0; y < canvas.height; y++) {
       nextState.data[y * 4 * canvas.width + x * 4 + 3] = Math.max(
-        curState.data[y * 4 * canvas.width + x * 4 + 3] + decayFactor,
+        getVal(x, y) + decayFactor,
         0
       );
     }
