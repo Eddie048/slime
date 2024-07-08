@@ -10,10 +10,10 @@ import {
 // Options
 const agentVelocity = 1;
 const senseDistance = 10;
-const senseAngle = 1.2;
-const decayFactor = 20;
+const senseAngle = 1;
+const decayFactor = 30;
 const turnSpeed = 0.7;
-const numAgents = 50000;
+const numAgents = 100000;
 const canvasScale = 2;
 
 // Initialize canvas and rendering context
@@ -28,8 +28,6 @@ const ctx = <CanvasRenderingContext2D>(
 // Fill screen with black
 ctx.fillStyle = "black";
 ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-ctx.filter = "blur(100px)";
 
 // Initialize agents
 type Agent = {
@@ -69,30 +67,40 @@ const animationLoop = () => {
     // Sense
     const temp = vMultiplyScalar(agent.velocity, senseDistance);
 
-    const turnStrength = Math.random();
+    // const turnStrength = Math.random();
 
     const leftSense = vAdd(vRotateByAngle(temp, -senseAngle), agent.position);
     const forewardSense = vAdd(temp, agent.position);
     const rightSense = vAdd(vRotateByAngle(temp, senseAngle), agent.position);
-    const leftVal = getVal(leftSense.x, leftSense.y);
-    const forewardVal = getVal(forewardSense.x, forewardSense.y);
-    const rightVal = getVal(rightSense.x, rightSense.y);
+    const leftVal = 255 - getVal(leftSense.x, leftSense.y);
+    const forewardVal = 255 - getVal(forewardSense.x, forewardSense.y);
+    const rightVal = 255 - getVal(rightSense.x, rightSense.y);
 
     // Rotate
-    if (forewardVal <= leftVal && forewardVal <= rightVal) {
-    } else if (forewardVal > leftVal && forewardVal > rightVal) {
-      agent.velocity = vRotateByAngle(
-        agent.velocity,
-        (turnStrength - 0.5) * 2 * turnSpeed
-      );
-    } else if (leftVal < rightVal) {
-      agent.velocity = vRotateByAngle(
-        agent.velocity,
-        -turnSpeed * turnStrength
-      );
-    } else {
-      agent.velocity = vRotateByAngle(agent.velocity, turnSpeed * turnStrength);
-    }
+    // if (forewardVal <= leftVal && forewardVal <= rightVal) {
+    // } else if (leftVal < rightVal) {
+    //   agent.velocity = vRotateByAngle(
+    //     agent.velocity,
+    //     -turnSpeed * turnStrength
+    //   );
+    // } else if (rightVal > leftVal) {
+    //   agent.velocity = vRotateByAngle(agent.velocity, turnSpeed * turnStrength);
+    // } else {
+    //   agent.velocity = vRotateByAngle(
+    //     agent.velocity,
+    //     (turnStrength - 0.5) * 2 * turnSpeed
+    //   );
+    // }
+    const sum = leftVal + rightVal + forewardVal;
+    const choice = Math.random();
+    if (choice < leftVal / sum)
+      agent.velocity = vRotateByAngle(agent.velocity, -turnSpeed);
+    else if (choice > (leftVal + forewardVal) / sum)
+      agent.velocity = vRotateByAngle(agent.velocity, turnSpeed);
+    // agent.velocity = vRotateByAngle(
+    //   agent.velocity,
+    //   ((leftVal - rightVal) / sum) * turnSpeed
+    // );
 
     // Move
     agent.position = vAdd(agent.position, agent.velocity);
