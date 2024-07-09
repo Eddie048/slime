@@ -1,3 +1,4 @@
+import { GPU } from "gpu.js";
 import {
   Vector,
   vAdd,
@@ -13,17 +14,15 @@ const senseDistance = 10;
 const senseAngle = 1.2;
 const decayFactor = 20;
 const turnSpeed = 0.7;
-const numAgents = 50000;
-const canvasScale = 2;
+const numAgents = 100000;
+const canvasScale = 1;
 
 // Initialize canvas and rendering context
-const canvas = <HTMLCanvasElement>document.getElementById("canvas");
+var canvas = <HTMLCanvasElement>document.getElementById("canvas");
 canvas.height = document.body.clientHeight / canvasScale;
 canvas.width = document.body.clientWidth / canvasScale;
 
-const ctx = <CanvasRenderingContext2D>(
-  canvas.getContext("2d", { willReadFrequently: true })
-);
+var ctx = <CanvasRenderingContext2D>canvas.getContext("2d");
 
 // Fill screen with black
 ctx.fillStyle = "black";
@@ -60,7 +59,7 @@ const getIndex = (location: Vector) => {
     return -1;
   else
     return (
-      Math.round(location.y) * 4 * canvas.width + Math.round(location.x) * 4 + 3
+      Math.floor(location.y) * 4 * canvas.width + Math.floor(location.x) * 4 + 3
     );
 };
 
@@ -105,7 +104,7 @@ const updateAgent = (agent: Agent, imgData: Uint8ClampedArray): Agent => {
   if (agent.position.x < 0) {
     agent.position.x += canvas.width;
   }
-  if (agent.position.x >= canvas.width - 1) {
+  if (agent.position.x >= canvas.width) {
     agent.position.x -= canvas.width;
   }
   if (agent.position.y < 0) {
@@ -120,6 +119,24 @@ const updateAgent = (agent: Agent, imgData: Uint8ClampedArray): Agent => {
 
 let prevTime = 1;
 
+// GPU Function to decay pixels
+const gpu = new GPU();
+const decay = gpu
+  .createKernel(function (
+    agentLocations: number[][],
+    prevImage: number[],
+    width: number,
+    decayFactor: number
+  ) {
+    let nextValue =
+      prevImage[this.thread.y * width * 4 + this.thread.x * 4] - decayFactor;
+    if (agentLocations[this.thread.y][this.thread.x] == 1) nextValue = 255;
+    nextValue /= 256;
+    this.color(nextValue, nextValue, nextValue);
+  })
+  .setOutput([canvas.width, canvas.height])
+  .setGraphical(true);
+
 const rollingAvg: number[] = [];
 for (let i = 0; i < 20; i++) {
   rollingAvg.push(0);
@@ -127,49 +144,47 @@ for (let i = 0; i < 20; i++) {
 
 const animationLoop = (currentTime: number) => {
   requestAnimationFrame(animationLoop);
-
   // Print framerate
   const deltaTime = Math.min(1, (currentTime - prevTime) / 1000);
   prevTime = currentTime;
   const curFrameRate = Math.round(100 / deltaTime) / 100;
   rollingAvg.shift();
   rollingAvg.push(curFrameRate);
-
   let sum = 0;
   for (let num of rollingAvg) {
     sum += num;
   }
   console.log("Framerate: " + Math.round((sum * 100) / 20) / 100);
-
   const curState = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
   // Update all agents
   for (let agent of agentList) {
     agent = updateAgent(agent, curState.data);
   }
 
-  // Decay
-  const nextState = ctx.createImageData(curState);
-  for (let x = 0; x < canvas.width; x++) {
-    for (let y = 0; y < canvas.height; y++) {
-      nextState.data[y * 4 * canvas.width + x * 4 + 3] =
-        curState.data[getIndex({ x: x, y: y })] + decayFactor;
-    }
-  }
-
   // TODO: Diffuse
-
+  const agentLocations: number[][] = new Array();
+  for (let i = 0; i < canvas.height; i++) {
+    agentLocations.push(new Array(canvas.width).fill(0));
+  }
   for (let agent of agentList) {
     // Deposit
-    nextState.data[
-      Math.round(agent.position.y) * 4 * canvas.width +
-        Math.round(agent.position.x) * 4 +
-        3
-    ] = 0;
+    agentLocations[Math.floor(agent.position.y)][
+      Math.floor(agent.position.x)
+    ] = 1;
   }
 
+  decay(agentLocations, curState.data, canvas.width, decayFactor);
   // Render
-  ctx.putImageData(nextState, 0, 0);
+  // ctx.clearRect(0, 0, canvas.width, canvas.height);
+  canvas.replaceWith(decay.canvas);
+  // canvas = decay.canvas;
+  // ctx = <CanvasRenderingContext2D>(
+  //   canvas.getContext("2d", { willReadFrequently: true })
+  // );
+  console.log(decay.canvas);
+
+  const test = <HTMLCanvasElement>document.getElementsByTagName("canvas")[0];
+  console.log(test.getContext("2d"));
 };
 
 // Start animation loop
