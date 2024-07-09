@@ -8,15 +8,20 @@ import {
   vRotateByAngle,
 } from "./vector";
 
-// Options
-const agentVelocity = 1;
-const senseDistance = 15;
-const senseAngle = 1.2;
-const decayFactor = 20;
-const turnSpeed = 0.7;
-const numAgents = 100000;
-const canvasScale = 1;
-const blurMute = 8;
+// World options
+const numAgents = 100000; // Total number of agents in the world
+const canvasScale = 1; // Scale of the canvas in canvas pixels per screen pixel
+const decayFactor = 30; // Value from 0 to 255, how much of a pixel's color fades every frame
+const blurMute = 3; // Value from 1 to 20, higher values mute blur, >21 turns blur off
+
+// Agent Options
+const senseDistance = 30; // Distance of sensors from the front of the agent
+const senseAngle = 1; // Angle in radians of side sensors from front sensor
+const turnSpeed = 0.3; // Angle in radians of max turn
+const randomTurnStrength = 1.0; // Value from 0 to 1 that controls what percent of the turn is random
+const agentSpeed = 1; // Velocity of agents
+// Normalize sensor distance
+const sensorMultiplier = senseDistance / agentSpeed;
 
 // Initialize canvas and rendering context
 const height = Math.floor(document.body.clientHeight / canvasScale);
@@ -29,10 +34,10 @@ type Agent = {
 };
 
 const agentList: Agent[] = [];
-
+const radius = Math.min(height / 2, width / 2);
 for (let i = 0; i < numAgents; i++) {
   const p: Vector = vCreate(
-    Math.random() * Math.min(200, width / 2),
+    Math.sqrt(Math.random()) * radius,
     Math.random() * 2 * Math.PI
   );
   const center: Vector = {
@@ -41,7 +46,7 @@ for (let i = 0; i < numAgents; i++) {
   };
   agentList.push({
     position: vAdd(p, center),
-    velocity: vMultiplyScalar(vNormalize(p), -agentVelocity),
+    velocity: vMultiplyScalar(vNormalize(p), -agentSpeed),
   });
 }
 
@@ -52,7 +57,7 @@ const getBrightness = (location: Vector) => {
     location.y < 0 ||
     location.y > height
   )
-    return 0;
+    return -1;
   else
     return prevRun[
       Math.floor(location.y) * width * 4 + Math.floor(location.x) * 4 + 1
@@ -61,9 +66,10 @@ const getBrightness = (location: Vector) => {
 
 const updateAgent = (agent: Agent): Agent => {
   // Sense
-  const temp = vMultiplyScalar(agent.velocity, senseDistance);
+  const temp = vMultiplyScalar(agent.velocity, sensorMultiplier);
 
-  const turnStrength = Math.random();
+  const turnStrength =
+    1 - randomTurnStrength + randomTurnStrength * Math.random();
 
   // Get index of data to sense
   let leftSenseVector = vAdd(vRotateByAngle(temp, -senseAngle), agent.position);
@@ -80,7 +86,7 @@ const updateAgent = (agent: Agent): Agent => {
   } else if (forewardVal < leftVal && forewardVal < rightVal) {
     agent.velocity = vRotateByAngle(
       agent.velocity,
-      (turnStrength - 0.5) * 2 * turnSpeed
+      turnStrength * turnSpeed * (Math.random() > 0.5 ? 1 : -1)
     );
   } else if (leftVal > rightVal) {
     agent.velocity = vRotateByAngle(agent.velocity, -turnSpeed * turnStrength);
@@ -117,10 +123,11 @@ const decay = gpu
     decayFactor: number,
     blurMute: number
   ) {
-    let nextValue =
-      (curState[this.thread.y * width * 4 + this.thread.x * 4] - decayFactor) /
-      256;
-    if (nextValue != 1 && blurMute < 20) {
+    let nextValue = curState[this.thread.y * width * 4 + this.thread.x * 4];
+    nextValue = nextValue == 254 ? 255 : nextValue - decayFactor;
+    if (nextValue == 254) nextValue = 253;
+    nextValue /= 255;
+    if (nextValue < 1 && blurMute < 20) {
       let sum = 0;
       for (let i = -1; i < 2; i++) {
         for (let j = -1; j < 2; j++) {
@@ -133,7 +140,7 @@ const decay = gpu
             sum +=
               curState[
                 (this.thread.y + i) * width * 4 + (this.thread.x + j) * 4
-              ] / 256;
+              ] / 255;
           }
         }
       }
@@ -144,6 +151,7 @@ const decay = gpu
   .setOutput([width, height])
   .setGraphical(true);
 
+// Variables for printing framerate
 const rollingAvg: number[] = new Array(100);
 rollingAvg.fill(0);
 document.getElementById("canvas")?.replaceWith(decay.canvas);
@@ -179,7 +187,7 @@ const animationLoop = (currentTime: number) => {
     prevRun[
       Math.floor(agent.position.y) * width * 4 +
         Math.floor(agent.position.x) * 4
-    ] = 256 + decayFactor;
+    ] = 254;
   }
 
   decay(prevRun, width, height, decayFactor, blurMute);
