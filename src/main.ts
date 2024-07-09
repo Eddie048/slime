@@ -16,6 +16,7 @@ const decayFactor = 20;
 const turnSpeed = 0.7;
 const numAgents = 100000;
 const canvasScale = 1;
+const blurMute = 8;
 
 // Initialize canvas and rendering context
 const height = Math.floor(document.body.clientHeight / canvasScale);
@@ -112,25 +113,44 @@ const decay = gpu
   .createKernel(function (
     curState: number[],
     width: number,
-    decayFactor: number
+    height: number,
+    decayFactor: number,
+    blurMute: number
   ) {
     let nextValue =
       (curState[this.thread.y * width * 4 + this.thread.x * 4] - decayFactor) /
       256;
-
+    if (nextValue != 1 && blurMute < 20) {
+      let sum = 0;
+      for (let i = -1; i < 2; i++) {
+        for (let j = -1; j < 2; j++) {
+          if (
+            this.thread.x + i >= 0 &&
+            this.thread.x + j <= width &&
+            this.thread.y + i >= 0 &&
+            this.thread.y + j <= height
+          ) {
+            sum +=
+              curState[
+                (this.thread.y + i) * width * 4 + (this.thread.x + j) * 4
+              ] / 256;
+          }
+        }
+      }
+      nextValue = (nextValue * blurMute + sum) / (9 + blurMute);
+    }
     this.color(nextValue, nextValue, nextValue);
   })
   .setOutput([width, height])
   .setGraphical(true);
 
-const rollingAvg: number[] = [];
-for (let i = 0; i < 10; i++) {
-  rollingAvg.push(0);
-}
+const rollingAvg: number[] = new Array(100);
+rollingAvg.fill(0);
 document.getElementById("canvas")?.replaceWith(decay.canvas);
 let prevTime = 1;
 var prevRun: number[];
 prevRun = <number[]>(<unknown>decay.getPixels(true));
+let lastPrint = 0;
 
 const animationLoop = (currentTime: number) => {
   requestAnimationFrame(animationLoop);
@@ -144,7 +164,10 @@ const animationLoop = (currentTime: number) => {
   for (let num of rollingAvg) {
     sum += num;
   }
-  console.log("Framerate: " + Math.round((sum * 100) / 10) / 100);
+  if (currentTime - lastPrint > 1000) {
+    console.log("Framerate: " + Math.round((sum * 100) / 100) / 100);
+    lastPrint = currentTime;
+  }
 
   // Update all agents
   for (let agent of agentList) {
@@ -156,10 +179,10 @@ const animationLoop = (currentTime: number) => {
     prevRun[
       Math.floor(agent.position.y) * width * 4 +
         Math.floor(agent.position.x) * 4
-    ] = 255 + decayFactor;
+    ] = 256 + decayFactor;
   }
 
-  decay(prevRun, width, decayFactor);
+  decay(prevRun, width, height, decayFactor, blurMute);
 
   prevRun = <number[]>(<unknown>decay.getPixels(true));
 };
