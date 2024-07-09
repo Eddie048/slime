@@ -10,16 +10,16 @@ import {
 
 // Options
 const agentVelocity = 1;
-const senseDistance = 10;
+const senseDistance = 15;
 const senseAngle = 1.2;
 const decayFactor = 20;
-const turnSpeed = 0.7;
+const turnSpeed = 1;
 const numAgents = 100000;
 const canvasScale = 1;
 
 // Initialize canvas and rendering context
-const height = document.body.clientHeight / canvasScale;
-const width = document.body.clientWidth / canvasScale;
+const height = Math.floor(document.body.clientHeight / canvasScale);
+const width = Math.floor(document.body.clientWidth / canvasScale);
 
 // Initialize agents inside a circle with random position facing towards the center
 type Agent = {
@@ -30,7 +30,10 @@ type Agent = {
 const agentList: Agent[] = [];
 
 for (let i = 0; i < numAgents; i++) {
-  const p: Vector = vCreate(Math.random() * 200, Math.random() * 2 * Math.PI);
+  const p: Vector = vCreate(
+    Math.random() * Math.min(200, width / 2),
+    Math.random() * 2 * Math.PI
+  );
   const center: Vector = {
     x: width / 2,
     y: height / 2,
@@ -60,7 +63,7 @@ const getBrightness = (location: Vector) => {
     location.y > height
   )
     return 0;
-  else return agentLocations[Math.floor(location.x)][Math.floor(location.y)];
+  else return agentLocations[Math.floor(location.y)][Math.floor(location.x)];
 };
 
 const updateAgent = (agent: Agent): Agent => {
@@ -80,13 +83,13 @@ const updateAgent = (agent: Agent): Agent => {
   const rightVal = getBrightness(rightSenseVector);
 
   // Rotate
-  if (forewardVal <= leftVal && forewardVal <= rightVal) {
-  } else if (forewardVal > leftVal && forewardVal > rightVal) {
+  if (forewardVal >= leftVal && forewardVal >= rightVal) {
+  } else if (forewardVal < leftVal && forewardVal < rightVal) {
     agent.velocity = vRotateByAngle(
       agent.velocity,
       (turnStrength - 0.5) * 2 * turnSpeed
     );
-  } else if (leftVal < rightVal) {
+  } else if (leftVal > rightVal) {
     agent.velocity = vRotateByAngle(agent.velocity, -turnSpeed * turnStrength);
   } else {
     agent.velocity = vRotateByAngle(agent.velocity, turnSpeed * turnStrength);
@@ -124,7 +127,7 @@ const decay = gpu
   .setGraphical(true);
 
 const rollingAvg: number[] = [];
-for (let i = 0; i < 20; i++) {
+for (let i = 0; i < 10; i++) {
   rollingAvg.push(0);
 }
 
@@ -142,7 +145,7 @@ const animationLoop = (currentTime: number) => {
   for (let num of rollingAvg) {
     sum += num;
   }
-  console.log("Framerate: " + Math.round((sum * 100) / 20) / 100);
+  console.log("Framerate: " + Math.round((sum * 100) / 10) / 100);
 
   // Update all agents
   for (let agent of agentList) {
@@ -168,10 +171,6 @@ const animationLoop = (currentTime: number) => {
   // ctx = <CanvasRenderingContext2D>(
   //   canvas.getContext("2d", { willReadFrequently: true })
   // );
-  console.log(decay.canvas);
-
-  const test = <HTMLCanvasElement>document.getElementsByTagName("canvas")[0];
-  console.log(test.getContext("2d"));
 };
 
 // Start animation loop
