@@ -44,17 +44,6 @@ for (let i = 0; i < numAgents; i++) {
   });
 }
 
-const agentLocations: number[][] = new Array();
-for (let i = 0; i < height; i++) {
-  agentLocations.push(new Array(width).fill(0));
-}
-for (let agent of agentList) {
-  // Deposit
-  agentLocations[Math.floor(agent.position.y)][
-    Math.floor(agent.position.x)
-  ] = 255;
-}
-
 const getBrightness = (location: Vector) => {
   if (
     location.x < 0 ||
@@ -121,7 +110,6 @@ const updateAgent = (agent: Agent): Agent => {
 const gpu = new GPU();
 const decay = gpu
   .createKernel(function (
-    agentLocations: number[][],
     curState: number[],
     width: number,
     decayFactor: number
@@ -129,8 +117,6 @@ const decay = gpu
     let nextValue =
       (curState[this.thread.y * width * 4 + this.thread.x * 4] - decayFactor) /
       256;
-
-    if (agentLocations[this.thread.y][this.thread.x] == 1) nextValue = 1;
 
     this.color(nextValue, nextValue, nextValue);
   })
@@ -165,31 +151,16 @@ const animationLoop = (currentTime: number) => {
     agent = updateAgent(agent);
   }
 
-  // TODO: Diffuse
-  for (let i = 0; i < height; i++) {
-    agentLocations[i].fill(0);
-  }
   for (let agent of agentList) {
     // Deposit
-    agentLocations[Math.floor(agent.position.y)][
-      Math.floor(agent.position.x)
-    ] = 1;
+    prevRun[
+      Math.floor(agent.position.y) * width * 4 +
+        Math.floor(agent.position.x) * 4
+    ] = 255 + decayFactor;
   }
 
-  // console.log(decay.getPixels());
-  // console.log(
-  //   decay.getPixels()[(height / 2) * 4 * width + (width * 4) / 2 + 3]
-  // );
-  if (prevRun == null) prevRun = decay.getPixels(true);
-  decay(agentLocations, prevRun, width, decayFactor);
-  // decay(agentLocations, prevRun, width, decayFactor);
-  // console.log(
-  //   decay.getPixels()[(height / 2) * 4 * width + (width * 4) / 2 + 3]
-  // );
-  // decay(agentLocations, decay.getPixels(true), width, decayFactor);
-  // console.log(
-  //   decay.getPixels()[(height / 2) * 4 * width + (width * 4) / 2 + 3]
-  // );
+  decay(prevRun, width, decayFactor);
+
   prevRun = decay.getPixels(true);
 };
 
