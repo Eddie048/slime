@@ -12,8 +12,8 @@ import {
 const agentVelocity = 1;
 const senseDistance = 15;
 const senseAngle = 1.2;
-const decayFactor = 10;
-const turnSpeed = 1;
+const decayFactor = 20;
+const turnSpeed = 0.7;
 const numAgents = 100000;
 const canvasScale = 1;
 
@@ -129,8 +129,8 @@ for (let i = 0; i < 10; i++) {
 }
 document.getElementById("canvas")?.replaceWith(decay.canvas);
 let prevTime = 1;
-var prevRun;
-prevRun = decay.getPixels(true);
+var prevRun: number[];
+prevRun = <number[]>(<unknown>decay.getPixels(true));
 
 const animationLoop = (currentTime: number) => {
   requestAnimationFrame(animationLoop);
@@ -161,7 +161,7 @@ const animationLoop = (currentTime: number) => {
 
   decay(prevRun, width, decayFactor);
 
-  prevRun = decay.getPixels(true);
+  prevRun = <number[]>(<unknown>decay.getPixels(true));
 };
 
 // Start animation loop
