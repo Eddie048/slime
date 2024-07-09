@@ -12,7 +12,7 @@ import {
 const agentVelocity = 1;
 const senseDistance = 15;
 const senseAngle = 1.2;
-const decayFactor = 20;
+const decayFactor = 10;
 const turnSpeed = 1;
 const numAgents = 100000;
 const canvasScale = 1;
@@ -52,7 +52,7 @@ for (let agent of agentList) {
   // Deposit
   agentLocations[Math.floor(agent.position.y)][
     Math.floor(agent.position.x)
-  ] = 1;
+  ] = 255;
 }
 
 const getBrightness = (location: Vector) => {
@@ -63,7 +63,10 @@ const getBrightness = (location: Vector) => {
     location.y > height
   )
     return 0;
-  else return agentLocations[Math.floor(location.y)][Math.floor(location.x)];
+  else
+    return prevRun[
+      Math.floor(location.y) * width * 4 + Math.floor(location.x) * 4 + 1
+    ];
 };
 
 const updateAgent = (agent: Agent): Agent => {
@@ -117,10 +120,18 @@ const updateAgent = (agent: Agent): Agent => {
 // GPU Function to decay pixels
 const gpu = new GPU();
 const decay = gpu
-  .createKernel(function (agentLocations: number[][]) {
-    let nextValue = 0;
-    if (agentLocations[this.thread.y][this.thread.x] == 1) nextValue = 255;
-    nextValue /= 256;
+  .createKernel(function (
+    agentLocations: number[][],
+    curState: number[],
+    width: number,
+    decayFactor: number
+  ) {
+    let nextValue =
+      (curState[this.thread.y * width * 4 + this.thread.x * 4] - decayFactor) /
+      256;
+
+    if (agentLocations[this.thread.y][this.thread.x] == 1) nextValue = 1;
+
     this.color(nextValue, nextValue, nextValue);
   })
   .setOutput([width, height])
@@ -130,8 +141,10 @@ const rollingAvg: number[] = [];
 for (let i = 0; i < 10; i++) {
   rollingAvg.push(0);
 }
-
+document.getElementById("canvas")?.replaceWith(decay.canvas);
 let prevTime = 1;
+var prevRun;
+prevRun = decay.getPixels(true);
 
 const animationLoop = (currentTime: number) => {
   requestAnimationFrame(animationLoop);
@@ -163,14 +176,21 @@ const animationLoop = (currentTime: number) => {
     ] = 1;
   }
 
-  decay(agentLocations);
-  // Render
-  // ctx.clearRect(0, 0, canvas.width, canvas.height);
-  document.getElementById("canvas")?.replaceWith(decay.canvas);
-  // canvas = decay.canvas;
-  // ctx = <CanvasRenderingContext2D>(
-  //   canvas.getContext("2d", { willReadFrequently: true })
+  // console.log(decay.getPixels());
+  // console.log(
+  //   decay.getPixels()[(height / 2) * 4 * width + (width * 4) / 2 + 3]
   // );
+  if (prevRun == null) prevRun = decay.getPixels(true);
+  decay(agentLocations, prevRun, width, decayFactor);
+  // decay(agentLocations, prevRun, width, decayFactor);
+  // console.log(
+  //   decay.getPixels()[(height / 2) * 4 * width + (width * 4) / 2 + 3]
+  // );
+  // decay(agentLocations, decay.getPixels(true), width, decayFactor);
+  // console.log(
+  //   decay.getPixels()[(height / 2) * 4 * width + (width * 4) / 2 + 3]
+  // );
+  prevRun = decay.getPixels(true);
 };
 
 // Start animation loop
