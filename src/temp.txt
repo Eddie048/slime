@@ -50,18 +50,22 @@ for (let i = 0; i < numAgents; i++) {
   });
 }
 
-const getBrightness = (location: Vector) => {
-  if (
-    location.x < 0 ||
-    location.x > width ||
-    location.y < 0 ||
-    location.y > height
-  )
-    return -1;
-  else
-    return prevRun[
-      Math.floor(location.y) * width * 4 + Math.floor(location.x) * 4 + 1
-    ];
+// Gets the index from a given location, wraps around borders
+const getIndex = (location: Vector) => {
+  if (location.x < 0) {
+    location.x += width;
+  }
+  if (location.x >= width) {
+    location.x -= width;
+  }
+  if (location.y < 0) {
+    location.y += height;
+  }
+  if (location.y >= height) {
+    location.y -= height;
+  }
+
+  return Math.floor(location.y) * width + Math.floor(location.x);
 };
 
 const updateAgent = (agent: Agent): Agent => {
@@ -77,9 +81,9 @@ const updateAgent = (agent: Agent): Agent => {
   let rightSenseVector = vAdd(vRotateByAngle(temp, senseAngle), agent.position);
 
   // Get value, if index is out of bounds avoid it
-  const leftVal = getBrightness(leftSenseVector);
-  const forewardVal = getBrightness(forewardSenseVector);
-  const rightVal = getBrightness(rightSenseVector);
+  const leftVal = prevRun[getIndex(leftSenseVector) * 4];
+  const forewardVal = prevRun[getIndex(forewardSenseVector) * 4];
+  const rightVal = prevRun[getIndex(rightSenseVector) * 4];
 
   // Rotate
   if (forewardVal >= leftVal && forewardVal >= rightVal) {
@@ -111,9 +115,7 @@ const updateAgent = (agent: Agent): Agent => {
   }
 
   // Deposit
-  prevRun[
-    Math.floor(agent.position.y) * width * 4 + Math.floor(agent.position.x) * 4
-  ] = 254;
+  prevRun[getIndex(agent.position) * 4] = 254;
 
   return agent;
 };
