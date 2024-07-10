@@ -1,12 +1,4 @@
 import { decay } from "./gpu-util";
-import {
-  Vector,
-  vAdd,
-  vCreate,
-  vMultiplyScalar,
-  vNormalize,
-  vRotateByAngle,
-} from "./vector";
 
 // World options
 const numAgents = 100000; // Total number of agents in the world
@@ -20,102 +12,103 @@ const senseAngle = 1; // Angle in radians of side sensors from front sensor
 const turnSpeed = 0.3; // Angle in radians of max turn
 const randomTurnStrength = 1.0; // Value from 0 to 1 that controls what percent of the turn is random
 const agentSpeed = 1; // Velocity of agents
-// Normalize sensor distance
-const sensorMultiplier = senseDistance / agentSpeed;
 
 // Initialize canvas and rendering context
 const height = Math.floor(document.body.clientHeight / canvasScale);
 const width = Math.floor(document.body.clientWidth / canvasScale);
 
 // Initialize agents inside a circle with random position facing towards the center
-type Agent = {
-  position: Vector;
-  velocity: Vector;
-};
 
-const agentList: Agent[] = [];
+// Agents are stored as 3 consecutive numbers, posX, posY, and rotation
+const agentList: number[] = new Array(numAgents * 3);
 const radius = Math.min(height / 2, width / 2);
+const xStart = Math.max(width - height, 0) / 2;
+const yStart = Math.max(height - width, 0) / 2;
 for (let i = 0; i < numAgents; i++) {
-  const p: Vector = vCreate(
-    Math.sqrt(Math.random()) * radius,
-    Math.random() * 2 * Math.PI
-  );
-  const center: Vector = {
-    x: width / 2,
-    y: height / 2,
-  };
-  agentList.push({
-    position: vAdd(p, center),
-    velocity: vMultiplyScalar(vNormalize(p), -agentSpeed),
-  });
+  const posX = Math.random() * radius * 2 + xStart;
+  const posY = Math.random() * radius * 2 + yStart;
+
+  // If position is not within a circle, try again
+  if (
+    Math.sqrt(
+      Math.pow(posX - (xStart + radius), 2) +
+        Math.pow(posY - (yStart + radius), 2)
+    ) > radius
+  ) {
+    i--;
+    continue;
+  }
+
+  const centerDir =
+    Math.atan((yStart + radius - posY) / (xStart + radius - posX)) +
+    (posX > xStart + radius ? Math.PI : 0);
+
+  agentList[i * 3] = posX;
+  agentList[i * 3 + 1] = posY;
+  agentList[i * 3 + 2] = centerDir;
 }
 
-const getBrightness = (location: Vector) => {
-  if (
-    location.x < 0 ||
-    location.x > width ||
-    location.y < 0 ||
-    location.y > height
-  )
-    return -1;
-  else
-    return prevRun[
-      Math.floor(location.y) * width * 4 + Math.floor(location.x) * 4 + 1
-    ];
+const getBrightness = (x: number, y: number) => {
+  if (x < 0 || x > width || y < 0 || y > height) return -1;
+  else return prevRun[Math.floor(y) * width * 4 + Math.floor(x) * 4 + 1];
 };
 
-const updateAgent = (agent: Agent): Agent => {
-  // Sense
-  const temp = vMultiplyScalar(agent.velocity, sensorMultiplier);
+const updateAgent = (agentIndex: number) => {
+  const agentX = agentList[agentIndex * 3];
+  const agentY = agentList[agentIndex * 3 + 1];
+  const agentDir = agentList[agentIndex * 3 + 2];
 
+  // Sense
+  const senseLeftX = Math.cos(agentDir - senseAngle) * senseDistance + agentX;
+  const senseLeftY = Math.sin(agentDir - senseAngle) * senseDistance + agentY;
+  const senseRightX = Math.cos(agentDir + senseAngle) * senseDistance + agentX;
+  const senseRightY = Math.sin(agentDir + senseAngle) * senseDistance + agentY;
+  const senseForwardX = Math.cos(agentDir) * senseDistance + agentX;
+  const senseForwardY = Math.sin(agentDir) * senseDistance + agentY;
+
+  // Get value, if index is out of bounds avoid it
+  const leftVal = getBrightness(senseLeftX, senseLeftY);
+  const rightVal = getBrightness(senseRightX, senseRightY);
+  const forwardVal = getBrightness(senseForwardX, senseForwardY);
+
+  // Rotate
   const turnStrength =
     1 - randomTurnStrength + randomTurnStrength * Math.random();
 
-  // Get index of data to sense
-  let leftSenseVector = vAdd(vRotateByAngle(temp, -senseAngle), agent.position);
-  let forewardSenseVector = vAdd(temp, agent.position);
-  let rightSenseVector = vAdd(vRotateByAngle(temp, senseAngle), agent.position);
-
-  // Get value, if index is out of bounds avoid it
-  const leftVal = getBrightness(leftSenseVector);
-  const forewardVal = getBrightness(forewardSenseVector);
-  const rightVal = getBrightness(rightSenseVector);
-
-  // Rotate
-  if (forewardVal >= leftVal && forewardVal >= rightVal) {
-  } else if (forewardVal < leftVal && forewardVal < rightVal) {
-    agent.velocity = vRotateByAngle(
-      agent.velocity,
-      turnStrength * turnSpeed * (Math.random() > 0.5 ? 1 : -1)
-    );
+  if (forwardVal >= leftVal && forwardVal >= rightVal) {
+    // Don't change direction
+  } else if (forwardVal < leftVal && forwardVal < rightVal) {
+    // Change direction randomly
+    agentList[agentIndex * 3 + 2] +=
+      turnStrength * turnSpeed * (Math.random() > 0.5 ? 1 : -1);
   } else if (leftVal > rightVal) {
-    agent.velocity = vRotateByAngle(agent.velocity, -turnSpeed * turnStrength);
+    // Turn left
+    agentList[agentIndex * 3 + 2] += -turnSpeed * turnStrength;
   } else {
-    agent.velocity = vRotateByAngle(agent.velocity, turnSpeed * turnStrength);
+    // Turn right
+    agentList[agentIndex * 3 + 2] += turnSpeed * turnStrength;
   }
 
   // Move
-  agent.position = vAdd(agent.position, agent.velocity);
+  let agentXTemp = agentX + Math.cos(agentDir) * agentSpeed;
+  let agentYTemp = agentY + Math.sin(agentDir) * agentSpeed;
+  // agent.position = vAdd(agent.position, agent.velocity);
+
   // Ensure agent stays in bounds, wrap around borders
-  if (agent.position.x < 0) {
-    agent.position.x += width;
-  }
-  if (agent.position.x >= width) {
-    agent.position.x -= width;
-  }
-  if (agent.position.y < 0) {
-    agent.position.y += height;
-  }
-  if (agent.position.y >= height) {
-    agent.position.y -= height;
-  }
+  if (agentXTemp < 0) agentXTemp += width;
+  else if (agentXTemp >= width) agentXTemp -= width;
+
+  if (agentYTemp < 0) agentYTemp += height;
+  else if (agentYTemp >= height) agentYTemp -= height;
+
+  // Update agent values
+  agentList[agentIndex * 3] = agentXTemp;
+  agentList[agentIndex * 3 + 1] = agentYTemp;
 
   // Deposit
   prevRun[
-    Math.floor(agent.position.y) * width * 4 + Math.floor(agent.position.x) * 4
+    Math.floor(agentYTemp) * width * 4 + Math.floor(agentXTemp) * 4
   ] = 254;
-
-  return agent;
 };
 
 // Variables for printing framerate
@@ -148,8 +141,8 @@ const animationLoop = (currentTime: number) => {
   }
 
   // Update all agents
-  for (let agent of agentList) {
-    agent = updateAgent(agent);
+  for (let i = 0; i < numAgents; i++) {
+    updateAgent(i);
   }
 
   decay(prevRun, width, height, decayFactor, blurMute);
