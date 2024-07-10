@@ -3,14 +3,15 @@ import { decay, updateAgents } from "./gpu-util";
 // World options
 const numAgents = 100000; // Total number of agents in the world
 const canvasScale = 1; // Scale of the canvas in canvas pixels per screen pixel
-const decayFactor = 30; // Value from 0 to 255, how much of a pixel's color fades every frame
-const blurMute = 3; // Value from 1 to 20, higher values mute blur, >21 turns blur off
+const decayFactor = 8; // Value from 0 to 255, how much of a pixel's color fades every frame
+const blurMute = 0.04; // Value from 1 to 20, higher values mute blur, >21 turns blur off
 
 // Agent Options
 const senseDistance = 30; // Distance of sensors from the front of the agent
-const senseAngle = 1; // Angle in radians of side sensors from front sensor
-const turnSpeed = 0.3; // Angle in radians of max turn
-const randomTurnStrength = 1.0; // Value from 0 to 1 that controls what percent of the turn is random
+const senseAngle = 0.8; // Angle in radians of side sensors from front sensor
+const sensorSize = 2; // Width, in pixels, of sensor
+const turnSpeed = 0.4; // Angle in radians of max turn
+const randomTurnStrength = 0; // Value from 0 to 1 that controls what percent of the turn is random
 const agentSpeed = 1; // Velocity of agents
 
 // Initialize canvas and rendering context
@@ -85,6 +86,7 @@ const animationLoop = (currentTime: number) => {
       agentList,
       senseAngle,
       senseDistance,
+      sensorSize,
       randomTurnStrength,
       turnSpeed,
       agentSpeed,
@@ -96,14 +98,11 @@ const animationLoop = (currentTime: number) => {
   // Update all agents
   const temp = agentList.toArray();
   for (let i = 0; i < numAgents; i++) {
-    // updateAgent(i);
-
-    // Deposit
+    // Deposit;
     prevRun[
       Math.floor(temp[i * 3 + 1]) * width * 4 + Math.floor(temp[i * 3]) * 4
-    ] = 254;
+    ] = 255;
   }
-  prevRun[10 * width * 4 + 51 * 4] = 254;
 
   decay(prevRun, width, height, decayFactor, blurMute);
 
