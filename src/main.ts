@@ -1,4 +1,4 @@
-import { decay } from "./gpu-util";
+import { decay, updateAgents } from "./gpu-util";
 
 // World options
 const numAgents = 100000; // Total number of agents in the world
@@ -18,12 +18,12 @@ const height = Math.floor(document.body.clientHeight / canvasScale);
 const width = Math.floor(document.body.clientWidth / canvasScale);
 
 // Initialize agents inside a circle with random position facing towards the center
-
 // Agents are stored as 3 consecutive numbers, posX, posY, and rotation
-const agentList: number[] = new Array(numAgents * 3);
+let agentList: number[] = new Array(numAgents * 3);
 const radius = Math.min(height / 2, width / 2);
 const xStart = Math.max(width - height, 0) / 2;
 const yStart = Math.max(height - width, 0) / 2;
+
 for (let i = 0; i < numAgents; i++) {
   const posX = Math.random() * radius * 2 + xStart;
   const posY = Math.random() * radius * 2 + yStart;
@@ -48,69 +48,6 @@ for (let i = 0; i < numAgents; i++) {
   agentList[i * 3 + 2] = centerDir;
 }
 
-const getBrightness = (x: number, y: number) => {
-  if (x < 0 || x > width || y < 0 || y > height) return -1;
-  else return prevRun[Math.floor(y) * width * 4 + Math.floor(x) * 4 + 1];
-};
-
-const updateAgent = (agentIndex: number) => {
-  const agentX = agentList[agentIndex * 3];
-  const agentY = agentList[agentIndex * 3 + 1];
-  const agentDir = agentList[agentIndex * 3 + 2];
-
-  // Sense
-  const senseLeftX = Math.cos(agentDir - senseAngle) * senseDistance + agentX;
-  const senseLeftY = Math.sin(agentDir - senseAngle) * senseDistance + agentY;
-  const senseRightX = Math.cos(agentDir + senseAngle) * senseDistance + agentX;
-  const senseRightY = Math.sin(agentDir + senseAngle) * senseDistance + agentY;
-  const senseForwardX = Math.cos(agentDir) * senseDistance + agentX;
-  const senseForwardY = Math.sin(agentDir) * senseDistance + agentY;
-
-  // Get value, if index is out of bounds avoid it
-  const leftVal = getBrightness(senseLeftX, senseLeftY);
-  const rightVal = getBrightness(senseRightX, senseRightY);
-  const forwardVal = getBrightness(senseForwardX, senseForwardY);
-
-  // Rotate
-  const turnStrength =
-    1 - randomTurnStrength + randomTurnStrength * Math.random();
-
-  if (forwardVal >= leftVal && forwardVal >= rightVal) {
-    // Don't change direction
-  } else if (forwardVal < leftVal && forwardVal < rightVal) {
-    // Change direction randomly
-    agentList[agentIndex * 3 + 2] +=
-      turnStrength * turnSpeed * (Math.random() > 0.5 ? 1 : -1);
-  } else if (leftVal > rightVal) {
-    // Turn left
-    agentList[agentIndex * 3 + 2] += -turnSpeed * turnStrength;
-  } else {
-    // Turn right
-    agentList[agentIndex * 3 + 2] += turnSpeed * turnStrength;
-  }
-
-  // Move
-  let agentXTemp = agentX + Math.cos(agentDir) * agentSpeed;
-  let agentYTemp = agentY + Math.sin(agentDir) * agentSpeed;
-  // agent.position = vAdd(agent.position, agent.velocity);
-
-  // Ensure agent stays in bounds, wrap around borders
-  if (agentXTemp < 0) agentXTemp += width;
-  else if (agentXTemp >= width) agentXTemp -= width;
-
-  if (agentYTemp < 0) agentYTemp += height;
-  else if (agentYTemp >= height) agentYTemp -= height;
-
-  // Update agent values
-  agentList[agentIndex * 3] = agentXTemp;
-  agentList[agentIndex * 3 + 1] = agentYTemp;
-
-  // Deposit
-  prevRun[
-    Math.floor(agentYTemp) * width * 4 + Math.floor(agentXTemp) * 4
-  ] = 254;
-};
-
 // Variables for printing framerate
 const rollingAvg: number[] = new Array(100);
 rollingAvg.fill(0);
@@ -120,6 +57,8 @@ let lastPrint = 0;
 
 // Set up canvas with GPU functions
 decay.setOutput([width, height]);
+updateAgents.setOutput([numAgents * 3]);
+updateAgents.setImmutable(true);
 document.getElementById("canvas")?.replaceWith(decay.canvas);
 prevRun = <number[]>(<unknown>decay.getPixels(true));
 
@@ -140,10 +79,31 @@ const animationLoop = (currentTime: number) => {
     lastPrint = currentTime;
   }
 
+  agentList = <number[]>(
+    updateAgents(
+      prevRun,
+      agentList,
+      senseAngle,
+      senseDistance,
+      randomTurnStrength,
+      turnSpeed,
+      agentSpeed,
+      width,
+      height
+    )
+  );
+
   // Update all agents
+  const temp = agentList.toArray();
   for (let i = 0; i < numAgents; i++) {
-    updateAgent(i);
+    // updateAgent(i);
+
+    // Deposit
+    prevRun[
+      Math.floor(temp[i * 3 + 1]) * width * 4 + Math.floor(temp[i * 3]) * 4
+    ] = 254;
   }
+  prevRun[10 * width * 4 + 51 * 4] = 254;
 
   decay(prevRun, width, height, decayFactor, blurMute);
 
