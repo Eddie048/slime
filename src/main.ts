@@ -1,10 +1,11 @@
+import { Texture } from "gpu.js";
 import { decay, updateAgents } from "./gpu-util";
 
 // World options
 const numAgents = 100000; // Total number of agents in the world
 const canvasScale = 1; // Scale of the canvas in canvas pixels per screen pixel
 const decayFactor = 8; // Value from 0 to 255, how much of a pixel's color fades every frame
-const blurMute = 0.04; // Value from 1 to 20, higher values mute blur, >21 turns blur off
+const blurMute = 0.4; // Value from 1 to 20, higher values mute blur, >21 turns blur off
 
 // Agent Options
 const senseDistance = 30; // Distance of sensors from the front of the agent
@@ -20,7 +21,7 @@ const width = Math.floor(document.body.clientWidth / canvasScale);
 
 // Initialize agents inside a circle with random position facing towards the center
 // Agents are stored as 3 consecutive numbers, posX, posY, and rotation
-let agentList: number[] = new Array(numAgents * 3);
+const agentListTemp: number[] = new Array(numAgents * 3);
 const radius = Math.min(height / 2, width / 2);
 const xStart = Math.max(width - height, 0) / 2;
 const yStart = Math.max(height - width, 0) / 2;
@@ -44,16 +45,15 @@ for (let i = 0; i < numAgents; i++) {
     Math.atan((yStart + radius - posY) / (xStart + radius - posX)) +
     (posX > xStart + radius ? Math.PI : 0);
 
-  agentList[i * 3] = posX;
-  agentList[i * 3 + 1] = posY;
-  agentList[i * 3 + 2] = centerDir;
+  agentListTemp[i * 3] = posX;
+  agentListTemp[i * 3 + 1] = posY;
+  agentListTemp[i * 3 + 2] = centerDir;
 }
 
 // Variables for printing framerate
 const rollingAvg: number[] = new Array(100);
 rollingAvg.fill(0);
 let prevTime = 1;
-var prevRun: number[];
 let lastPrint = 0;
 
 // Set up canvas with GPU functions
@@ -61,7 +61,21 @@ decay.setOutput([width, height]);
 updateAgents.setOutput([numAgents * 3]);
 updateAgents.setImmutable(true);
 document.getElementById("canvas")?.replaceWith(decay.canvas);
-prevRun = <number[]>(<unknown>decay.getPixels(true));
+let prevRun: number[] = <number[]>(<unknown>decay.getPixels(true)); // Unknown conversion because creating a new array is slow
+let agentList: Texture = <Texture>(
+  updateAgents(
+    prevRun,
+    agentListTemp,
+    senseAngle,
+    senseDistance,
+    sensorSize,
+    randomTurnStrength,
+    turnSpeed,
+    agentSpeed,
+    width,
+    height
+  )
+);
 
 const animationLoop = (currentTime: number) => {
   requestAnimationFrame(animationLoop);
@@ -80,23 +94,21 @@ const animationLoop = (currentTime: number) => {
     lastPrint = currentTime;
   }
 
-  agentList = <number[]>(
-    updateAgents(
-      prevRun,
-      agentList,
-      senseAngle,
-      senseDistance,
-      sensorSize,
-      randomTurnStrength,
-      turnSpeed,
-      agentSpeed,
-      width,
-      height
-    )
-  );
+  agentList = updateAgents(
+    prevRun,
+    agentList,
+    senseAngle,
+    senseDistance,
+    sensorSize,
+    randomTurnStrength,
+    turnSpeed,
+    agentSpeed,
+    width,
+    height
+  ) as Texture;
 
   // Update all agents
-  const temp = agentList.toArray();
+  const temp = <number[]>agentList.toArray();
   for (let i = 0; i < numAgents; i++) {
     // Deposit;
     prevRun[
@@ -106,7 +118,7 @@ const animationLoop = (currentTime: number) => {
 
   decay(prevRun, width, height, decayFactor, blurMute);
 
-  prevRun = <number[]>(<unknown>decay.getPixels(true));
+  prevRun = <number[]>(<unknown>decay.getPixels(true)); // Unknown conversion because creating a new array is slow
 };
 
 // Start animation loop

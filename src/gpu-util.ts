@@ -1,4 +1,4 @@
-import { GPU } from "gpu.js";
+import { GPU, IKernelFunctionThis } from "gpu.js";
 
 function getIndex(x: number, y: number, width: number, height: number) {
   let xTemp = x;
@@ -16,6 +16,7 @@ function getIndex(x: number, y: number, width: number, height: number) {
 const gpu1 = new GPU();
 const decay = gpu1
   .createKernel(function (
+    this: IKernelFunctionThis,
     curState: number[],
     width: number,
     height: number,
@@ -52,6 +53,7 @@ const decay = gpu1
 const gpu2 = new GPU();
 const updateAgents = gpu2
   .createKernel(function (
+    this: IKernelFunctionThis,
     curState: number[],
     agentList: number[],
     senseAngle: number,
