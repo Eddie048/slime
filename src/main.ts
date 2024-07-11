@@ -1,175 +1,124 @@
-import {
-  Vector,
-  vAdd,
-  vCreate,
-  vMultiplyScalar,
-  vNormalize,
-  vRotateByAngle,
-} from "./vector";
+import { Texture } from "gpu.js";
+import { decay, updateAgents } from "./gpu-util";
 
-// Options
-const agentVelocity = 1;
-const senseDistance = 10;
-const senseAngle = 1.2;
-const decayFactor = 20;
-const turnSpeed = 0.7;
-const numAgents = 50000;
-const canvasScale = 2;
+// World options
+const numAgents = 100000; // Total number of agents in the world
+const canvasScale = 1; // Scale of the canvas in canvas pixels per screen pixel
+const decayFactor = 8; // Value from 0 to 255, how much of a pixel's color fades every frame
+const blurMute = 0.4; // Value from 1 to 20, higher values mute blur, >21 turns blur off
+
+// Agent Options
+const senseDistance = 30; // Distance of sensors from the front of the agent
+const senseAngle = 0.8; // Angle in radians of side sensors from front sensor
+const sensorSize = 2; // Width, in pixels, of sensor
+const turnSpeed = 0.4; // Angle in radians of max turn
+const randomTurnStrength = 0; // Value from 0 to 1 that controls what percent of the turn is random
+const agentSpeed = 1; // Velocity of agents
 
 // Initialize canvas and rendering context
-const canvas = <HTMLCanvasElement>document.getElementById("canvas");
-canvas.height = document.body.clientHeight / canvasScale;
-canvas.width = document.body.clientWidth / canvasScale;
-
-const ctx = <CanvasRenderingContext2D>(
-  canvas.getContext("2d", { willReadFrequently: true })
-);
-
-// Fill screen with black
-ctx.fillStyle = "black";
-ctx.fillRect(0, 0, canvas.width, canvas.height);
+const height = Math.floor(document.body.clientHeight / canvasScale);
+const width = Math.floor(document.body.clientWidth / canvasScale);
 
 // Initialize agents inside a circle with random position facing towards the center
-type Agent = {
-  position: Vector;
-  velocity: Vector;
-};
-
-const agentList: Agent[] = [];
+// Agents are stored as 3 consecutive numbers, posX, posY, and rotation
+const agentListTemp: number[] = new Array(numAgents * 3);
+const radius = Math.min(height / 2, width / 2);
+const xStart = Math.max(width - height, 0) / 2;
+const yStart = Math.max(height - width, 0) / 2;
 
 for (let i = 0; i < numAgents; i++) {
-  const p: Vector = vCreate(Math.random() * 200, Math.random() * 2 * Math.PI);
-  const center: Vector = {
-    x: canvas.width / 2,
-    y: canvas.height / 2,
-  };
-  agentList.push({
-    position: vAdd(p, center),
-    velocity: vMultiplyScalar(vNormalize(p), -agentVelocity),
-  });
-}
+  const posX = Math.random() * radius * 2 + xStart;
+  const posY = Math.random() * radius * 2 + yStart;
 
-// Get index in a 1D array from a 2D vector
-const getIndex = (location: Vector) => {
+  // If position is not within a circle, try again
   if (
-    location.x < 0 ||
-    location.x > canvas.width - 1 ||
-    location.y < 0 ||
-    location.y > canvas.height - 1
-  )
-    return -1;
-  else
-    return (
-      Math.round(location.y) * 4 * canvas.width + Math.round(location.x) * 4 + 3
-    );
-};
-
-const updateAgent = (agent: Agent, imgData: Uint8ClampedArray): Agent => {
-  // Sense
-  const temp = vMultiplyScalar(agent.velocity, senseDistance);
-
-  const turnStrength = Math.random();
-
-  // Get index of data to sense
-  let leftSenseIndex = getIndex(
-    vAdd(vRotateByAngle(temp, -senseAngle), agent.position)
-  );
-  let forewardSenseIndex = getIndex(vAdd(temp, agent.position));
-  let rightSenseIndex = getIndex(
-    vAdd(vRotateByAngle(temp, senseAngle), agent.position)
-  );
-
-  // Get value, if index is out of bounds avoid it
-  const penalty = 256;
-  const leftVal = leftSenseIndex == -1 ? penalty : imgData[leftSenseIndex];
-  const forewardVal =
-    forewardSenseIndex == -1 ? penalty : imgData[forewardSenseIndex];
-  const rightVal = rightSenseIndex == -1 ? penalty : imgData[rightSenseIndex];
-
-  // Rotate
-  if (forewardVal <= leftVal && forewardVal <= rightVal) {
-  } else if (forewardVal > leftVal && forewardVal > rightVal) {
-    agent.velocity = vRotateByAngle(
-      agent.velocity,
-      (turnStrength - 0.5) * 2 * turnSpeed
-    );
-  } else if (leftVal < rightVal) {
-    agent.velocity = vRotateByAngle(agent.velocity, -turnSpeed * turnStrength);
-  } else {
-    agent.velocity = vRotateByAngle(agent.velocity, turnSpeed * turnStrength);
+    Math.sqrt(
+      Math.pow(posX - (xStart + radius), 2) +
+        Math.pow(posY - (yStart + radius), 2)
+    ) > radius
+  ) {
+    i--;
+    continue;
   }
 
-  // Move
-  agent.position = vAdd(agent.position, agent.velocity);
-  // Ensure agent stays in bounds, wrap around borders
-  if (agent.position.x < 0) {
-    agent.position.x += canvas.width;
-  }
-  if (agent.position.x >= canvas.width - 1) {
-    agent.position.x -= canvas.width;
-  }
-  if (agent.position.y < 0) {
-    agent.position.y += canvas.height;
-  }
-  if (agent.position.y >= canvas.height) {
-    agent.position.y -= canvas.height;
-  }
+  const centerDir =
+    Math.atan((yStart + radius - posY) / (xStart + radius - posX)) +
+    (posX > xStart + radius ? Math.PI : 0);
 
-  return agent;
-};
-
-let prevTime = 1;
-
-const rollingAvg: number[] = [];
-for (let i = 0; i < 20; i++) {
-  rollingAvg.push(0);
+  agentListTemp[i * 3] = posX;
+  agentListTemp[i * 3 + 1] = posY;
+  agentListTemp[i * 3 + 2] = centerDir;
 }
+
+// Variables for printing framerate
+const rollingAvg: number[] = new Array(100);
+rollingAvg.fill(0);
+let prevTime = 1;
+let lastPrint = 0;
+
+// Set up canvas with GPU functions
+decay.setOutput([width, height]);
+updateAgents.setOutput([numAgents * 3]);
+updateAgents.setImmutable(true);
+document.getElementById("canvas")?.replaceWith(decay.canvas);
+let prevRun: number[] = <number[]>(<unknown>decay.getPixels(true)); // Unknown conversion because creating a new array is slow
+let agentList: Texture = <Texture>(
+  updateAgents(
+    prevRun,
+    agentListTemp,
+    senseAngle,
+    senseDistance,
+    sensorSize,
+    randomTurnStrength,
+    turnSpeed,
+    agentSpeed,
+    width,
+    height
+  )
+);
 
 const animationLoop = (currentTime: number) => {
   requestAnimationFrame(animationLoop);
-
   // Print framerate
   const deltaTime = Math.min(1, (currentTime - prevTime) / 1000);
   prevTime = currentTime;
   const curFrameRate = Math.round(100 / deltaTime) / 100;
   rollingAvg.shift();
   rollingAvg.push(curFrameRate);
-
   let sum = 0;
   for (let num of rollingAvg) {
     sum += num;
   }
-  console.log("Framerate: " + Math.round((sum * 100) / 20) / 100);
+  if (currentTime - lastPrint > 1000) {
+    console.log("Framerate: " + Math.round((sum * 100) / 100) / 100);
+    lastPrint = currentTime;
+  }
 
-  const curState = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  agentList = updateAgents(
+    prevRun,
+    agentList,
+    senseAngle,
+    senseDistance,
+    sensorSize,
+    randomTurnStrength,
+    turnSpeed,
+    agentSpeed,
+    width,
+    height
+  ) as Texture;
 
   // Update all agents
-  for (let agent of agentList) {
-    agent = updateAgent(agent, curState.data);
+  const temp = <number[]>agentList.toArray();
+  for (let i = 0; i < numAgents; i++) {
+    // Deposit;
+    prevRun[
+      Math.floor(temp[i * 3 + 1]) * width * 4 + Math.floor(temp[i * 3]) * 4
+    ] = 255;
   }
 
-  // Decay
-  const nextState = ctx.createImageData(curState);
-  for (let x = 0; x < canvas.width; x++) {
-    for (let y = 0; y < canvas.height; y++) {
-      nextState.data[y * 4 * canvas.width + x * 4 + 3] =
-        curState.data[getIndex({ x: x, y: y })] + decayFactor;
-    }
-  }
+  decay(prevRun, width, height, decayFactor, blurMute);
 
-  // TODO: Diffuse
-
-  for (let agent of agentList) {
-    // Deposit
-    nextState.data[
-      Math.round(agent.position.y) * 4 * canvas.width +
-        Math.round(agent.position.x) * 4 +
-        3
-    ] = 0;
-  }
-
-  // Render
-  ctx.putImageData(nextState, 0, 0);
+  prevRun = <number[]>(<unknown>decay.getPixels(true)); // Unknown conversion because creating a new array is slow
 };
 
 // Start animation loop
